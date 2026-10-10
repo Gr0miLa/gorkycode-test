@@ -1,0 +1,11 @@
+.git
+.venv
+.env
+__pycache__
+*.pyc
+.pytest_cache
+data/*.db
+data/*.sqlite*
+tests
+Тестовое_задание_голосовой_ассистент_для_задач_и_встреч.pdf
+

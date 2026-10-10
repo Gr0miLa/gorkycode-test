@@ -1,0 +1,197 @@
+# Voice Assistant Test Project
+
+## Project goal
+
+Build a small public prototype of a Russian-language voice assistant for tasks,
+reminders, and meetings. The result will be delivered as a repository URL and a
+public service URL. Reviewers will test the deployed service themselves, so the
+happy path, error handling, setup instructions, and demo data must work without
+manual intervention.
+
+The source assignment is
+`Тестовое_задание_голосовой_ассистент_для_задач_и_встреч.pdf`.
+`voice_assistant_events_1000.csv` is example/seed data, not a formal test set.
+Follow `IMPLEMENTATION_PLAN.md` for the agreed architecture, API, data model,
+delivery phases, and MVP completion criteria.
+
+## MVP scope
+
+The first version must support:
+
+1. Create a task or reminder from free-form Russian text or recorded speech.
+2. Create a meeting from free-form Russian text or recorded speech.
+3. List tasks and meetings for a requested date range.
+4. Search previously created tasks and meetings.
+5. Ask a follow-up question when required information is missing.
+6. Preserve data and an unfinished dialogue between consecutive requests.
+
+Out of scope for the first version:
+
+- authentication and multiple registered users;
+- Google/Outlook calendar synchronization;
+- recurring events;
+- production notifications;
+- realtime/always-on audio streaming;
+- a full RAG pipeline.
+
+## Agreed technology direction
+
+- Backend: Python and FastAPI.
+- Persistence: SQLite on the VPS filesystem, accessed through SQLAlchemy.
+- Deployment: a simple VPS with persistent disk and HTTPS.
+- LLM/NLU: GigaChat API.
+- Voice input: record a short audio file in the browser, upload it to the
+  backend, upload it to GigaChat file storage, and attach it to a chat request.
+- UI: a minimal web page with a record button, text input, dialogue history,
+  and visible event results.
+- Time zone: `Europe/Moscow` until the product rules are revisited.
+- Seed import: load the supplied CSV idempotently on initial setup.
+
+Do not depend on SaluteSpeech for the MVP. As of 2026-10-10 its API still has
+documentation and supports existing customers, but since 2026-07-15 connection
+for new individual customers is unavailable and Freemium renewal has stopped.
+
+## GigaChat integration constraints
+
+Current GigaChat API documentation confirms:
+
+- audio can be uploaded to `POST /files` with `purpose=general`;
+- supported audio includes MP3, MP4, M4A, WAV, WebM, OGG, and Opus;
+- one audio file is limited to 35 MB and the combined attached audio/image
+  request must be below 80 MB;
+- uploaded file IDs are supplied in the message `attachments` array;
+- this is file-based audio understanding/transcription, not streaming STT;
+- models support user-defined functions/tool calls;
+- structured output can be constrained with `response_format.type=json_schema`;
+- GigaChat also provides a separate embeddings endpoint, but embeddings are not
+  required for the first search implementation.
+
+Keep the GigaChat client behind an application interface so another provider or
+dedicated STT service can be substituted without changing business logic.
+Always validate model-produced data with Pydantic before changing the database.
+The model may select an action and propose arguments; it must not execute SQL.
+
+Initial application actions/tools:
+
+- `create_task`
+- `create_meeting`
+- `list_events`
+- `search_events`
+
+Prefer strict JSON schema for intent and argument extraction. User-visible
+answers may be generated only after the application has validated and executed
+the requested operation.
+
+## Anonymous user and dialogue state
+
+Do not identify users by IP address. IPs can change, can be shared by many
+people, and introduce unnecessary personal-data concerns.
+
+On first visit, generate a random UUID in the browser and store it in a cookie
+or `localStorage`. Send it as an opaque session ID with API requests. Use that ID
+to isolate reviewer-created events and dialogue state. Seed CSV events may be
+read-only shared demo data visible to every anonymous session.
+
+Persist short dialogue state in SQLite. A session should contain at least:
+
+- `session_id`;
+- `pending_action` as validated JSON;
+- `last_referenced_event_id`, when applicable;
+- `created_at` and `updated_at`.
+
+Example clarification flow:
+
+1. User: `Добавь встречу с Иваном завтра`.
+2. Model returns `create_meeting` with a missing start time.
+3. Backend saves a pending action and asks for the time.
+4. User: `В 15:00`.
+5. Backend combines the answer with the pending action, validates it, creates
+   the meeting, clears pending state, and confirms the result.
+
+Do not send an unbounded conversation transcript to the model. Store messages
+for UI/history if useful, but pass only the current request, compact session
+state, and the few most recent turns needed for disambiguation.
+
+## Data model direction
+
+Use one `events` table for tasks, reminders, and meetings. It should include at
+least:
+
+- `id`;
+- `owner_session_id` (nullable for shared seed data);
+- `source` (`seed`, `user_text`, or `user_audio`);
+- `type` (`task`, `reminder`, or `meeting`);
+- `title` and optional `description`;
+- `starts_at`, `ends_at`, and/or `due_at`;
+- `timezone`;
+- `status`;
+- `raw_user_text`;
+- `created_at` and `updated_at`.
+
+Store normalized datetimes as ISO-8601 values and perform parsing and comparison
+through Python datetime types. Keep the original user phrase for debugging.
+
+Current provisional time rules:
+
+- week starts on Monday;
+- default timezone is `Europe/Moscow`;
+- a task may have a date without an exact time;
+- a meeting requires a start time;
+- default meeting duration is 60 minutes;
+- ambiguous or contradictory input triggers a clarification instead of a write;
+- relative-date behavior will be refined later and must be covered by tests with
+  a fixed application clock.
+
+## Search plan
+
+Start with deterministic search, not RAG:
+
+1. Assign normalized tags when importing or creating an event.
+2. Filter by event type, date range, and session ownership.
+3. Search tags and normalized event text using SQLite FTS5 where available.
+4. Return a small ranked result set.
+
+If this is insufficient, add semantic retrieval using the GigaChat embeddings
+endpoint. For only about 1,000 seed records, embeddings can be stored as JSON or
+BLOB values in SQLite and cosine similarity can be calculated in Python; a
+separate vector database is unnecessary. Treat this as semantic search, not as
+a full RAG system unless retrieved events are actually supplied to a model for
+answer generation.
+
+## Secrets and repository safety
+
+Runtime API credentials may be stored in a VPS `.env` file, but `.env` must
+never be committed. Maintain a committed `.env.example` containing variable
+names and safe placeholders. Ensure `.gitignore` covers `.env`, SQLite runtime
+files, uploaded audio, logs, and other generated artifacts.
+
+The browser must never receive GigaChat credentials. All provider calls go
+through the backend. Delete temporary local audio and remote uploaded files
+after processing whenever the API flow permits it.
+
+## Quality and delivery requirements
+
+- Provide a health endpoint suitable for VPS monitoring.
+- Add an idempotent database initialization and seed-import command.
+- Include Docker-based setup and production launch instructions.
+- Provide graceful messages for microphone denial, malformed audio, provider
+  timeouts, invalid model output, and database errors.
+- Test relative dates with a frozen clock and test the four required actions.
+- Keep audio/provider, LLM interpretation, business logic, persistence, and UI
+  as separate modules.
+- README must explain architectural decisions, limitations, environment setup,
+  service URL, and several example phrases reviewers can try.
+
+## Open decisions
+
+Resolve these through small technical spikes before locking implementation:
+
+- exact GigaChat model available under the project credentials and whether its
+  freemium quota supports audio attachments, functions, and JSON schema;
+- whether one multimodal request should both transcribe and extract the action,
+  or whether transcription and structured interpretation should be two calls;
+- browser audio format and any FFmpeg conversion needed on the VPS;
+- whether voice output is required for the first deployed version and, if so,
+  which TTS provider or browser API to use;
+- final tagging vocabulary and ranking rules;
+- final rules for relative dates, past times, and conflicting meetings.
