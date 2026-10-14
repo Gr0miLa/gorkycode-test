@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -22,26 +23,28 @@ class AssistantService:
         self.dialogue = DialogueService(db)
 
     async def handle_text(self, session_id: str, text: str) -> AssistantResponse:
+        pending = self.dialogue.get_pending(session_id)
         command = await self.client.interpret(
             text=text,
             now_iso=self._now_iso(),
-            pending_action=self.dialogue.get_pending(session_id),
+            pending_action=pending,
         )
-        command = self._normalize_and_log(command)
+        command = self._normalize_and_log(command, pending)
         return self.execute(session_id, command, "user_text")
 
     async def handle_audio(
         self, session_id: str, filename: str, content: bytes, content_type: str
     ) -> AssistantResponse:
+        pending = self.dialogue.get_pending(session_id)
         file_id = await self.client.upload_audio(filename, content, content_type)
         try:
             command = await self.client.interpret(
                 text="Транскрибируй аудио и выполни содержащуюся в нем команду.",
                 now_iso=self._now_iso(),
-                pending_action=self.dialogue.get_pending(session_id),
+                pending_action=pending,
                 attachment_id=file_id,
             )
-            command = self._normalize_and_log(command)
+            command = self._normalize_and_log(command, pending)
             return self.execute(session_id, command, "user_audio")
         finally:
             await self.client.delete_file(file_id)
@@ -108,9 +111,46 @@ class AssistantService:
     def _now_iso(self) -> str:
         return datetime.now(ZoneInfo(self.settings.default_timezone)).isoformat()
 
-    @staticmethod
-    def _normalize_and_log(command: AssistantCommand) -> AssistantCommand:
-        normalized = normalize_command(command)
+    def _normalize_and_log(self, command: AssistantCommand, pending: dict | None = None) -> AssistantCommand:
+        normalized = normalize_command(
+            command, datetime.now(ZoneInfo(self.settings.default_timezone))
+        )
+        if pending and normalized.action in {Action.CREATE_TASK, Action.CREATE_MEETING}:
+            pending_command = AssistantCommand.model_validate(pending)
+            normalized = normalized.model_copy(update={
+                "title": pending_command.title or normalized.title,
+                "event_type": pending_command.event_type or normalized.event_type,
+                "due_at": normalized.due_at or pending_command.due_at,
+                "starts_at": normalized.starts_at or pending_command.starts_at,
+                "ends_at": normalized.ends_at or pending_command.ends_at,
+                "transcript": normalized.transcript,
+            })
+            if normalized.action == Action.CREATE_MEETING and pending_command.starts_at:
+                match = re.search(
+                    r"(?:^|\s)(\d{1,2})(?:(?::|\s)(\d{2})|(\d{2}))?\s*(?:час(?:а|ов)?|утра|вечера|дня)?(?:\s|$)",
+                    normalized.transcript.lower(),
+                )
+                if match:
+                    hour = int(match.group(1))
+                    if "вечера" in normalized.transcript.lower() or "дня" in normalized.transcript.lower():
+                        hour = hour + 12 if hour < 12 else hour
+                    normalized = normalized.model_copy(update={
+                        "starts_at": pending_command.starts_at.replace(
+                            hour=hour,
+                            minute=int(match.group(2) or match.group(3) or 0),
+                            second=0,
+                            microsecond=0,
+                        )
+                    })
+            missing = []
+            if normalized.action == Action.CREATE_MEETING:
+                if not normalized.title:
+                    missing.append("title")
+                if not normalized.starts_at:
+                    missing.append("start_time")
+            elif not normalized.title:
+                missing.append("title")
+            normalized = normalized.model_copy(update={"missing_fields": missing})
         logger.info(
             "assistant_command action=%s type=%s title=%r due_at=%s starts_at=%s "
             "date_from=%s date_to=%s missing=%s",
@@ -124,4 +164,3 @@ class AssistantService:
             normalized.missing_fields,
         )
         return normalized
-

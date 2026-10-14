@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import DialogueSession, Event
 from app.domain.commands import AssistantCommand, EventType
-from app.services.text import extract_tags, normalize_text
+from app.services.text import extract_tags, normalize_text, word_stem
 
 
 def iso(value: datetime | None) -> str | None:
@@ -86,8 +86,12 @@ class EventService:
 
         def score(event: Event) -> tuple[int, int]:
             text = event.search_text
+            text_stems = {word_stem(term) for term in text.split()}
             exact = 3 if normalized and normalized in text else 0
-            matched = sum(1 for term in terms if term in text)
+            matched = sum(
+                1 for term in terms
+                if term in text or word_stem(term) in text_stems
+            )
             return exact + matched, -event.id
 
         ranked = [event for event in base if score(event)[0] > 0]

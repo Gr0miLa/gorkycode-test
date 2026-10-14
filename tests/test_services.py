@@ -50,6 +50,26 @@ def test_search_by_partial_text(db):
     assert result[0].title == "Подготовить презентацию по бюджету"
 
 
+def test_search_uses_natural_language_subject_and_word_forms(db):
+    session_id = str(uuid4())
+    service = EventService(db)
+    service.create_task(session_id, command(title="Отправить отчет"), "user_text")
+    service.create_meeting(
+        session_id,
+        command(
+            action=Action.CREATE_MEETING,
+            title="Встреча с дизайнером",
+            event_type=EventType.MEETING,
+            starts_at=datetime.fromisoformat("2026-10-22T11:00:00+03:00"),
+            due_at=None,
+        ),
+        "user_text",
+    )
+
+    assert service.search_events(session_id, "Найди задачу про отчет")[0].title == "Отправить отчет"
+    assert service.search_events(session_id, "Когда у меня встреча с дизайнером?")[0].title == "Встреча с дизайнером"
+
+
 def test_meeting_gets_default_duration(db):
     session_id = str(uuid4())
     service = EventService(db)
@@ -84,4 +104,3 @@ def test_pending_action_round_trip(db):
     assert service.get_pending(session_id)["title"] == "Встреча с Иваном"
     service.clear_pending(session_id)
     assert service.get_pending(session_id) is None
-

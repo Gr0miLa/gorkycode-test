@@ -43,3 +43,88 @@ def test_explicit_meeting_list_keeps_meeting_filter():
         event_type=None,
     )
     assert normalize_command(command).event_type == EventType.MEETING
+
+
+def test_nearest_weekday_is_calculated_from_application_clock():
+    command = AssistantCommand(
+        action=Action.CREATE_TASK,
+        transcript="В пятницу нужно отправить отчет",
+        title="Отправить отчет",
+        event_type=EventType.TASK,
+    )
+
+    result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:04:00+03:00"))
+
+    assert result.due_at == datetime.fromisoformat("2026-10-16T23:59:59+03:00")
+
+
+def test_task_without_date_does_not_get_model_invented_deadline():
+    command = AssistantCommand(
+        action=Action.CREATE_TASK,
+        transcript="Нужно подготовить презентацию",
+        title="Подготовить презентацию",
+        event_type=EventType.TASK,
+        due_at=datetime.fromisoformat("2026-11-30T23:59:59+03:00"),
+    )
+
+    result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:04:00+03:00"))
+
+    assert result.due_at is None
+
+
+def test_current_week_is_monday_through_sunday():
+    command = AssistantCommand(
+        action=Action.LIST_EVENTS,
+        transcript="Что запланировано на эту неделю?",
+    )
+
+    result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:04:00+03:00"))
+
+    assert result.date_from == datetime.fromisoformat("2026-10-12T00:00:00+03:00")
+    assert result.date_to == datetime.fromisoformat("2026-10-18T23:59:59+03:00")
+
+
+def test_reminder_misclassified_as_meeting_is_corrected():
+    command = AssistantCommand(
+        action=Action.CREATE_MEETING,
+        transcript="Напомни мне завтра в 10 утра позвонить Ивану",
+        title="Позвонить Ивану",
+        event_type=EventType.MEETING,
+        starts_at=datetime.fromisoformat("2026-10-15T10:00:00+03:00"),
+    )
+
+    result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:53:00+03:00"))
+
+    assert result.action == Action.CREATE_TASK
+    assert result.event_type == EventType.REMINDER
+    assert result.due_at == datetime.fromisoformat("2026-10-15T10:00:00+03:00")
+
+
+def test_clock_times_are_not_treated_as_missing():
+    command = AssistantCommand(
+        action=Action.CREATE_MEETING,
+        transcript="Добавь встречу с командой завтра в 15:00",
+        title="Встреча с командой",
+        event_type=EventType.MEETING,
+        starts_at=datetime.fromisoformat("2026-10-15T15:00:00+03:00"),
+    )
+
+    result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:53:00+03:00"))
+
+    assert result.missing_fields == []
+    assert result.starts_at == datetime.fromisoformat("2026-10-15T15:00:00+03:00")
+
+
+def test_relative_hours_with_russian_number_are_calculated():
+    command = AssistantCommand(
+        action=Action.CREATE_MEETING,
+        transcript="Запланируй встречу с клиентом через два часа",
+        title="Встреча с клиентом",
+        event_type=EventType.MEETING,
+        missing_fields=["start_time"],
+    )
+
+    result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:57:00+03:00"))
+
+    assert result.starts_at == datetime.fromisoformat("2026-10-15T00:57:00+03:00")
+    assert result.missing_fields == []

@@ -6,6 +6,12 @@ STOP_WORDS = {
     "от", "до", "за", "для", "про", "мне", "меня", "мой", "мои", "это",
 }
 
+SEARCH_WORDS = {
+    "найди", "найти", "айди", "когда", "была", "был", "были", "у", "меня",
+    "задачу", "задача", "задачи", "встречу", "встреча", "встречи", "событие",
+    "события", "напоминание", "напоминания", "покажи", "покажите", "про", "по", "с",
+}
+
 
 def normalize_text(value: str) -> str:
     value = value.lower().replace("ё", "е")
@@ -17,3 +23,17 @@ def extract_tags(value: str) -> list[str]:
     words = normalize_text(value).split()
     return sorted({word for word in words if len(word) >= 3 and word not in STOP_WORDS})
 
+
+def extract_search_query(value: str) -> str:
+    """Keep the subject of a natural-language search request."""
+    words = normalize_text(value).split()
+    terms = [word for word in words if word not in SEARCH_WORDS and len(word) >= 2]
+    return " ".join(terms)
+
+
+def word_stem(value: str) -> str:
+    """Apply a small suffix normalizer for Russian search terms."""
+    for suffix in ("ировать", "иться", "овать", "евать", "ывать", "ивать", "ить", "ать", "ять", "ого", "ему", "ами", "ами", "ому", "ами", "ом", "ем", "ой", "ый", "ий", "ая", "ое", "ые", "ов", "ев", "ок", "ы", "и", "а", "я", "у", "е", "о", "ю", "ь"):
+        if len(value) - len(suffix) >= 3 and value.endswith(suffix):
+            return value[:-len(suffix)]
+    return value

@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -13,6 +14,7 @@ from app.services.assistant import AssistantService
 from app.services.events import EventService
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 ALLOWED_AUDIO_TYPES = {
     "audio/webm", "audio/ogg", "audio/opus", "audio/mpeg", "audio/mp3",
     "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav",
@@ -40,6 +42,9 @@ async def assistant_text(
         return await assistant_service(db).handle_text(session_id, body.text)
     except GigaChatError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unhandled text assistant error")
+        raise HTTPException(status_code=500, detail="Внутренняя ошибка обработки запроса") from exc
 
 
 @router.post("/assistant/audio", response_model=AssistantResponse)
@@ -63,6 +68,9 @@ async def assistant_audio(
         )
     except GigaChatError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unhandled audio assistant error")
+        raise HTTPException(status_code=500, detail="Внутренняя ошибка обработки запроса") from exc
 
 
 @router.get("/events", response_model=list[EventResponse])
@@ -76,4 +84,3 @@ async def events(
         session_id, event_type=event_type, limit=limit
     )
     return [EventResponse.model_validate(item) for item in items]
-
