@@ -28,15 +28,15 @@ def test_create_and_list_task(db):
     assert [item.title for item in result] == ["Подготовить договор"]
 
 
-def test_sessions_are_isolated_but_seed_is_shared(db):
+def test_sessions_are_isolated_and_seed_is_not_user_visible(db):
     first, second = str(uuid4()), str(uuid4())
     service = EventService(db)
     service.create_task(first, command(title="Личная задача"), "user_text")
     seed = service._make_event(None, "seed", "task", "Общая задача", "Общая задача")
     service._save(seed)
 
-    assert {item.title for item in service.list_events(second)} == {"Общая задача"}
-    assert {item.title for item in service.list_events(first)} == {"Личная задача", "Общая задача"}
+    assert service.list_events(second) == []
+    assert {item.title for item in service.list_events(first)} == {"Личная задача"}
 
 
 def test_search_by_partial_text(db):

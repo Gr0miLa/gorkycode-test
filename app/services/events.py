@@ -54,7 +54,7 @@ class EventService:
     ) -> list[Event]:
         moment = Event.starts_at
         fallback_moment = Event.due_at
-        conditions = [or_(Event.owner_session_id.is_(None), Event.owner_session_id == session_id)]
+        conditions = [Event.owner_session_id == session_id]
         if event_type:
             conditions.append(Event.type == event_type.value)
         if date_from:

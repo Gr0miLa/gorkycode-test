@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     gigachat_verify_ssl: bool = True
 
     max_audio_bytes: int = 10 * 1024 * 1024
+    import_seed: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -24,4 +25,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
