@@ -128,3 +128,18 @@ def test_relative_hours_with_russian_number_are_calculated():
 
     assert result.starts_at == datetime.fromisoformat("2026-10-15T00:57:00+03:00")
     assert result.missing_fields == []
+
+
+def test_absolute_date_with_minutes_is_not_cleared():
+    command = AssistantCommand(
+        action=Action.CREATE_MEETING,
+        transcript="Добавь встречу с друзьями 20 октября в 18:30",
+        title="Встреча с друзьями",
+        event_type=EventType.MEETING,
+        starts_at=datetime.fromisoformat("2026-10-20T18:30:00+03:00"),
+    )
+
+    result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:57:00+03:00"))
+
+    assert result.starts_at == datetime.fromisoformat("2026-10-20T18:30:00+03:00")
+    assert result.missing_fields == []

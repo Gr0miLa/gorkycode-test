@@ -132,8 +132,13 @@ def _relative_event_dates(command: AssistantCommand, now: datetime) -> dict:
         sunday = now.date() + timedelta(days=6 - now.weekday())
         return _move_to_date(command, sunday, event_moment, end_of_day=True, timezone=now.tzinfo)
     # A model must not invent a deadline for a request that contains no date.
-    has_explicit_date = bool(re.search(r"\b\d{1,2}[./-]\d{1,2}|\b\d{1,2}\s+числ", text))
-    has_explicit_time = bool(re.search(r"\b\d{1,2}(:\d{2})?\s*(час|утра|вечера|дня)", text))
+    has_explicit_date = bool(
+        re.search(
+            r"\b\d{1,2}[./-]\d{1,2}|\b\d{1,2}\s+(?:числ|январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр)",
+            text,
+        )
+    )
+    has_explicit_time = _has_explicit_time(text)
     if not has_explicit_date and not has_explicit_time:
         return {"due_at": None, "starts_at": None, "ends_at": None}
     return updates
