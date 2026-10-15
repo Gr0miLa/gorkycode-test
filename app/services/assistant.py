@@ -66,8 +66,13 @@ class AssistantService:
         self.dialogue.clear_pending(session_id)
         if command.action == Action.CREATE_TASK:
             event = self.events.create_task(session_id, command, source)
+            reply = (
+                f"Задача «{event.title}» добавлена."
+                if event.due_date or event.due_at
+                else f"Задача «{event.title}» добавлена без срока."
+            )
             return AssistantResponse(
-                reply=f"Задача «{event.title}» добавлена.",
+                reply=reply,
                 action=command.action.value,
                 transcript=command.transcript,
                 created_event=EventResponse.model_validate(event),
@@ -121,6 +126,7 @@ class AssistantService:
                 "title": pending_command.title or normalized.title,
                 "event_type": pending_command.event_type or normalized.event_type,
                 "due_at": normalized.due_at or pending_command.due_at,
+                "due_date": normalized.due_date or pending_command.due_date,
                 "starts_at": normalized.starts_at or pending_command.starts_at,
                 "ends_at": normalized.ends_at or pending_command.ends_at,
                 "transcript": normalized.transcript,
@@ -150,6 +156,8 @@ class AssistantService:
                     missing.append("start_time")
             elif not normalized.title:
                 missing.append("title")
+            elif not normalized.due_date:
+                missing.append("due_date")
             normalized = normalized.model_copy(update={"missing_fields": missing})
         logger.info(
             "assistant_command action=%s type=%s title=%r due_at=%s starts_at=%s "

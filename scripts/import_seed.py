@@ -48,6 +48,7 @@ def import_seed(path: Path) -> tuple[int, int]:
                 starts_at=moment if event_type == "meeting" else None,
                 ends_at=None,
                 due_at=moment if event_type != "meeting" else None,
+                due_date=row["date"] if event_type != "meeting" else None,
                 timezone=timezone,
                 status="pending",
                 raw_user_text=title,
@@ -66,4 +67,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     created, skipped = import_seed(Path(args.path))
     print(f"Imported: {created}; skipped: {skipped}")
-

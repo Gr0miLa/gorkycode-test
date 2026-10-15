@@ -25,6 +25,7 @@ class Event(Base):
     starts_at: Mapped[str | None] = mapped_column(String(40), index=True)
     ends_at: Mapped[str | None] = mapped_column(String(40))
     due_at: Mapped[str | None] = mapped_column(String(40), index=True)
+    due_date: Mapped[str | None] = mapped_column(String(10), index=True)
     timezone: Mapped[str] = mapped_column(String(100), default="Europe/Moscow")
     status: Mapped[str] = mapped_column(String(20), default="pending")
     raw_user_text: Mapped[str | None] = mapped_column(Text)
@@ -48,4 +49,3 @@ class DialogueSession(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
-

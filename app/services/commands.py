@@ -56,12 +56,33 @@ def normalize_command(command: AssistantCommand, now: datetime | None = None) ->
             updates["due_at"] = command.starts_at
             updates["starts_at"] = None
             updates["ends_at"] = None
-        updates["missing_fields"] = ["title"] if not command.title else []
+        missing = []
         if not command.title:
-            updates["clarification_question"] = "Что нужно добавить в задачу?"
+            missing.append("title")
+        if not _has_date_reference(command.transcript):
+            missing.append("due_date")
+        updates["missing_fields"] = missing
+        if missing:
+            updates["clarification_question"] = (
+                "На какую дату поставить задачу?" if "due_date" in missing
+                else "Что нужно добавить в задачу?"
+            )
 
     if command.action in {Action.CREATE_TASK, Action.CREATE_MEETING} and now:
         updates.update(_relative_event_dates(command, now))
+
+    if command.action == Action.CREATE_TASK:
+        effective_due = updates.get("due_at", command.due_at)
+        effective_date = command.due_date or (effective_due.date() if effective_due else None)
+        if not _has_date_reference(command.transcript):
+            effective_date = None
+            updates["due_at"] = None
+        if effective_date:
+            updates["due_date"] = effective_date
+            if not _has_explicit_time(command.transcript):
+                updates["due_at"] = None
+        else:
+            updates["due_date"] = None
 
     if command.action == Action.CREATE_MEETING:
         updates["event_type"] = EventType.MEETING
@@ -139,16 +160,26 @@ def _relative_event_dates(command: AssistantCommand, now: datetime) -> dict:
         sunday = now.date() + timedelta(days=6 - now.weekday())
         return _move_to_date(command, sunday, event_moment, end_of_day=True, timezone=now.tzinfo)
     # A model must not invent a deadline for a request that contains no date.
-    has_explicit_date = bool(
-        re.search(
-            r"\b\d{1,2}[./-]\d{1,2}|\b\d{1,2}\s+(?:числ|январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр)",
-            text,
-        )
-    )
+    has_explicit_date = _has_date_reference(text)
     has_explicit_time = _has_explicit_time(text)
     if not has_explicit_date and not has_explicit_time:
         return {"due_at": None, "starts_at": None, "ends_at": None}
     return updates
+
+
+def _has_date_reference(value: str) -> bool:
+    text = normalize_text(value)
+    return bool(
+        any(marker in text for marker in (
+            "сегодня", "вчера", "завтра", "послезавтра", "до конца недели",
+            "на этой неделе", "на следующей неделе",
+        ))
+        or any(day in text for day in WEEKDAY_ALIASES)
+        or re.search(
+            r"\b\d{1,2}[./-]\d{1,2}|\b\d{1,2}\s+(?:числ|январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр)",
+            text,
+        )
+    )
 
 
 def _has_explicit_time(value: str) -> bool:

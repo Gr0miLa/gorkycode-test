@@ -172,3 +172,21 @@ def test_yesterday_is_preserved_when_creating_meeting():
 
     assert result.starts_at == datetime.fromisoformat("2026-10-13T09:00:00+03:00")
     assert result.missing_fields == ["start_time"]
+
+
+def test_task_without_date_clears_model_invented_due_date():
+    command = AssistantCommand(
+        action=Action.CREATE_TASK,
+        transcript="Добавь задачу сделать английский",
+        title="Сделать английский",
+        event_type=EventType.TASK,
+        due_at=datetime.fromisoformat("2026-10-31T23:59:59+03:00"),
+        due_date=datetime.fromisoformat("2026-10-31").date(),
+    )
+
+    result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:57:00+03:00"))
+
+    assert result.due_at is None
+    assert result.due_date is None
+    assert result.missing_fields == ["due_date"]
+    assert result.clarification_question == "На какую дату поставить задачу?"

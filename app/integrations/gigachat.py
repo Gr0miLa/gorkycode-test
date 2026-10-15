@@ -27,6 +27,7 @@ COMMAND_SCHEMA: dict[str, Any] = {
         "starts_at": {"type": ["string", "null"], "format": "date-time"},
         "ends_at": {"type": ["string", "null"], "format": "date-time"},
         "due_at": {"type": ["string", "null"], "format": "date-time"},
+        "due_date": {"type": ["string", "null"], "format": "date"},
         "date_from": {"type": ["string", "null"], "format": "date-time"},
         "date_to": {"type": ["string", "null"], "format": "date-time"},
         "query": {"type": ["string", "null"]},
@@ -36,7 +37,7 @@ COMMAND_SCHEMA: dict[str, Any] = {
     "required": [
         "action", "transcript", "title", "event_type", "starts_at", "ends_at",
         "due_at", "date_from", "date_to", "query", "missing_fields",
-        "clarification_question",
+        "clarification_question", "due_date",
     ],
 }
 
@@ -188,8 +189,10 @@ class GigaChatClient:
 
 Разрешенные действия: create_task, create_meeting, list_events, search_events.
 Если текущая фраза отвечает на уточнение, объедини ее с незавершенной командой.
-Для встречи обязательны title и starts_at. Для задачи обязателен title, дата и
-время могут отсутствовать. Не выдумывай обязательные данные: перечисли их в
+Для встречи обязательны title и starts_at. Для задачи обязательны title и дата;
+если дата не указана, перечисли due_date в missing_fields и задай вопрос о дате.
+Если у задачи есть только дата, заполни due_date и оставь due_at равным null.
+Не выдумывай обязательные данные: перечисли их в
 missing_fields и сформулируй один короткий clarification_question. В таком
 случае сохрани исходное целевое action, а не меняй его на clarify.
 Для запросов списка укажи date_from/date_to. Для поиска укажи query.

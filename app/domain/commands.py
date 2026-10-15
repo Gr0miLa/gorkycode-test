@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -28,6 +28,7 @@ class AssistantCommand(BaseModel):
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     due_at: datetime | None = None
+    due_date: date | None = None
     date_from: datetime | None = None
     date_to: datetime | None = None
     query: str | None = Field(default=None, max_length=500)
@@ -63,6 +64,7 @@ class EventResponse(BaseModel):
     starts_at: str | None
     ends_at: str | None
     due_at: str | None
+    due_date: str | None
     status: str
     source: str
 
@@ -76,4 +78,3 @@ class AssistantResponse(BaseModel):
     events: list[EventResponse] = Field(default_factory=list)
     created_event: EventResponse | None = None
     needs_clarification: bool = False
-

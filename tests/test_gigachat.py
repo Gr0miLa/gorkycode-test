@@ -20,6 +20,7 @@ def test_interpret_uses_json_schema_and_parses_command():
             "starts_at": None,
             "ends_at": None,
             "due_at": None,
+            "due_date": None,
             "date_from": None,
             "date_to": None,
             "query": None,
@@ -36,4 +37,3 @@ def test_interpret_uses_json_schema_and_parses_command():
     assert result.action == Action.CREATE_TASK
     assert captured["path"] == "/chat/completions"
     assert captured["json"]["response_format"]["type"] == "json_schema"
-

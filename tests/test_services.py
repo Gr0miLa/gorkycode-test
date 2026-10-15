@@ -28,6 +28,27 @@ def test_create_and_list_task(db):
     assert [item.title for item in result] == ["Подготовить договор"]
 
 
+def test_date_only_task_is_listed_for_its_date(db):
+    session_id = str(uuid4())
+    service = EventService(db)
+    item = service.create_task(
+        session_id,
+        command(due_at=None, due_date=datetime.fromisoformat("2026-10-15T00:00:00+03:00").date()),
+        "user_text",
+    )
+
+    result = service.list_events(
+        session_id,
+        datetime.fromisoformat("2026-10-15T00:00:00+03:00"),
+        datetime.fromisoformat("2026-10-15T23:59:59+03:00"),
+        EventType.TASK,
+    )
+
+    assert item.due_at is None
+    assert item.due_date == "2026-10-15"
+    assert [event.title for event in result] == ["Подготовить договор"]
+
+
 def test_sessions_are_isolated_and_seed_is_not_user_visible(db):
     first, second = str(uuid4()), str(uuid4())
     service = EventService(db)

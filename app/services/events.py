@@ -20,12 +20,14 @@ class EventService:
 
     def create_task(self, session_id: str, command: AssistantCommand, source: str) -> Event:
         event_type = command.event_type or EventType.TASK
+        due_date = command.due_date or (command.due_at.date() if command.due_at else None)
         event = self._make_event(
             session_id=session_id,
             source=source,
             event_type=event_type.value,
             title=command.title or "",
             due_at=iso(command.due_at),
+            due_date=due_date.isoformat() if due_date else None,
             raw_text=command.transcript,
         )
         return self._save(event)
@@ -54,19 +56,20 @@ class EventService:
     ) -> list[Event]:
         moment = Event.starts_at
         fallback_moment = Event.due_at
+        date_only = Event.due_date
         conditions = [Event.owner_session_id == session_id]
         if event_type:
             conditions.append(Event.type == event_type.value)
         if date_from:
             start = iso(date_from)
-            conditions.append(or_(moment >= start, fallback_moment >= start))
+            conditions.append(or_(moment >= start, fallback_moment >= start, date_only >= start[:10]))
         if date_to:
             end = iso(date_to)
-            conditions.append(or_(moment <= end, fallback_moment <= end))
+            conditions.append(or_(moment <= end, fallback_moment <= end, date_only <= end[:10]))
         stmt = (
             select(Event)
             .where(and_(*conditions))
-            .order_by(Event.starts_at, Event.due_at, Event.id)
+            .order_by(Event.starts_at, Event.due_at, Event.due_date, Event.id)
             .limit(limit)
         )
         return list(self.db.scalars(stmt))
@@ -108,6 +111,7 @@ class EventService:
         starts_at: str | None = None,
         ends_at: str | None = None,
         due_at: str | None = None,
+        due_date: str | None = None,
         source_id: str | None = None,
     ) -> Event:
         tags = extract_tags(title)
@@ -120,6 +124,7 @@ class EventService:
             starts_at=starts_at,
             ends_at=ends_at,
             due_at=due_at,
+            due_date=due_date,
             timezone=self.timezone,
             status="pending",
             raw_user_text=raw_text,

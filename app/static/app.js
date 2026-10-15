@@ -79,9 +79,14 @@ function addMessage(role, text, events = []) {
 
 function formatEvent(event) {
   const moment = event.starts_at || event.due_at;
+  if (!moment && event.due_date) return `${event.type} · ${formatDateOnly(event.due_date)}`;
   if (!moment) return event.type;
   const date = new Date(moment);
   return `${event.type} · ${date.toLocaleString("ru-RU")}`;
+}
+
+function formatDateOnly(value) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("ru-RU");
 }
 
 async function parseResponse(response) {
@@ -160,4 +165,3 @@ async function uploadRecording() {
     setBusy(false);
   }
 }
-
