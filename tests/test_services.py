@@ -49,15 +49,18 @@ def test_date_only_task_is_listed_for_its_date(db):
     assert [event.title for event in result] == ["Подготовить договор"]
 
 
-def test_sessions_are_isolated_and_seed_is_not_user_visible(db):
+def test_sessions_are_isolated_and_seed_is_shared(db):
     first, second = str(uuid4()), str(uuid4())
     service = EventService(db)
     service.create_task(first, command(title="Личная задача"), "user_text")
     seed = service._make_event(None, "seed", "task", "Общая задача", "Общая задача")
     service._save(seed)
 
-    assert service.list_events(second) == []
-    assert {item.title for item in service.list_events(first)} == {"Личная задача"}
+    assert {item.title for item in service.list_events(second)} == {"Общая задача"}
+    assert {item.title for item in service.list_events(first)} == {
+        "Личная задача",
+        "Общая задача",
+    }
 
 
 def test_search_by_partial_text(db):
@@ -89,6 +92,43 @@ def test_search_uses_natural_language_subject_and_word_forms(db):
 
     assert service.search_events(session_id, "Найди задачу про отчет")[0].title == "Отправить отчет"
     assert service.search_events(session_id, "Когда у меня встреча с дизайнером?")[0].title == "Встреча с дизайнером"
+
+
+def test_search_respects_date_range(db):
+    session_id = str(uuid4())
+    service = EventService(db)
+    service.create_meeting(
+        session_id,
+        command(
+            action=Action.CREATE_MEETING,
+            title="Встреча с Иваном",
+            event_type=EventType.MEETING,
+            starts_at=datetime.fromisoformat("2026-10-16T11:00:00+03:00"),
+            due_at=None,
+        ),
+        "user_text",
+    )
+    service.create_meeting(
+        session_id,
+        command(
+            action=Action.CREATE_MEETING,
+            title="Встреча с Иваном",
+            event_type=EventType.MEETING,
+            starts_at=datetime.fromisoformat("2026-10-17T11:00:00+03:00"),
+            due_at=None,
+        ),
+        "user_text",
+    )
+
+    result = service.search_events(
+        session_id,
+        "Иван",
+        datetime.fromisoformat("2026-10-16T00:00:00+03:00"),
+        datetime.fromisoformat("2026-10-16T23:59:59+03:00"),
+    )
+
+    assert len(result) == 1
+    assert result[0].starts_at == "2026-10-16T11:00:00+03:00"
 
 
 def test_meeting_gets_default_duration(db):

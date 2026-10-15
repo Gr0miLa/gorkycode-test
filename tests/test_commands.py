@@ -55,7 +55,8 @@ def test_nearest_weekday_is_calculated_from_application_clock():
 
     result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:04:00+03:00"))
 
-    assert result.due_at == datetime.fromisoformat("2026-10-16T23:59:59+03:00")
+    assert result.due_date.isoformat() == "2026-10-16"
+    assert result.due_at is None
 
 
 def test_task_without_date_does_not_get_model_invented_deadline():
@@ -159,6 +160,87 @@ def test_natural_event_list_is_not_misclassified_as_search():
     assert result.date_to == datetime.fromisoformat("2026-10-13T23:59:59+03:00")
 
 
+def test_generic_planned_events_is_always_a_list_request():
+    command = AssistantCommand(
+        action=Action.CLARIFY,
+        transcript="Какие запланированы события?",
+        event_type=None,
+        clarification_question="Уточните запрос",
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.action == Action.LIST_EVENTS
+    assert result.event_type is None
+    assert result.missing_fields == []
+
+
+def test_generic_planned_events_removes_model_invented_date_range():
+    command = AssistantCommand(
+        action=Action.LIST_EVENTS,
+        transcript="Какие запланированы события?",
+        date_from=datetime.fromisoformat("2026-10-15T00:00:00+03:00"),
+        date_to=datetime.fromisoformat("2026-10-15T23:59:59+03:00"),
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.action == Action.LIST_EVENTS
+    assert result.date_from is None
+    assert result.date_to is None
+
+
+def test_unrelated_message_is_not_allowed_to_become_event_list():
+    command = AssistantCommand(
+        action=Action.LIST_EVENTS,
+        transcript="Расскажи анекдот",
+        date_from=datetime.fromisoformat("2026-10-15T00:00:00+03:00"),
+        date_to=datetime.fromisoformat("2026-10-15T23:59:59+03:00"),
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.action == Action.CLARIFY
+    assert "создавать задачи" in result.clarification_question
+
+
+def test_unrelated_clarification_stays_outside_event_creation():
+    command = AssistantCommand(
+        action=Action.CLARIFY,
+        transcript="Привет, как дела?",
+        clarification_question="Я помогаю работать с задачами и встречами.",
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.action == Action.CLARIFY
+    assert result.event_type is None
+
+
+def test_search_keeps_relative_date_filter():
+    command = AssistantCommand(
+        action=Action.SEARCH_EVENTS,
+        transcript="Найди встречи с Иваном завтра",
+        query="Иван",
+        event_type=EventType.MEETING,
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.date_from == datetime.fromisoformat("2026-10-16T00:00:00+03:00")
+    assert result.date_to == datetime.fromisoformat("2026-10-16T23:59:59+03:00")
+
+
 def test_yesterday_is_preserved_when_creating_meeting():
     command = AssistantCommand(
         action=Action.CREATE_MEETING,
@@ -171,7 +253,8 @@ def test_yesterday_is_preserved_when_creating_meeting():
     result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:57:00+03:00"))
 
     assert result.starts_at == datetime.fromisoformat("2026-10-13T09:00:00+03:00")
-    assert result.missing_fields == ["start_time"]
+    assert result.missing_fields == ["past_date"]
+    assert "прошла" in result.clarification_question
 
 
 def test_task_without_date_clears_model_invented_due_date():
@@ -190,3 +273,130 @@ def test_task_without_date_clears_model_invented_due_date():
     assert result.due_date is None
     assert result.missing_fields == ["due_date"]
     assert result.clarification_question == "На какую дату поставить задачу?"
+
+
+def test_explicit_task_marker_overrides_wrong_meeting_classification():
+    command = AssistantCommand(
+        action=Action.CREATE_MEETING,
+        transcript="Поставь задачу сходить погулять",
+        title="Сходить погулять",
+        event_type=EventType.MEETING,
+        starts_at=datetime.fromisoformat("2026-10-15T15:00:00+03:00"),
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.action == Action.CREATE_TASK
+    assert result.event_type == EventType.TASK
+    assert result.title == "Сходить погулять"
+    assert result.missing_fields == ["due_date"]
+
+
+def test_explicit_task_marker_overrides_clarification_and_meeting_type():
+    command = AssistantCommand(
+        action=Action.CLARIFY,
+        transcript="Поставь задачу сходить погулять",
+        title="Сходить погулять",
+        event_type=EventType.MEETING,
+        missing_fields=["start_date"],
+        clarification_question="На какую дату поставить встречу?",
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.action == Action.CREATE_TASK
+    assert result.event_type == EventType.TASK
+    assert result.missing_fields == ["due_date"]
+    assert result.clarification_question == "На какую дату поставить задачу?"
+
+
+def test_meeting_without_date_and_time_asks_for_both():
+    command = AssistantCommand(
+        action=Action.CREATE_MEETING,
+        transcript="Добавь встречу в кафе",
+        title="Встреча в кафе",
+        event_type=EventType.MEETING,
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.missing_fields == ["start_date", "start_time"]
+    assert result.clarification_question == "На какую дату и время поставить встречу?"
+
+
+def test_reminder_requires_both_date_and_time():
+    command = AssistantCommand(
+        action=Action.CREATE_TASK,
+        transcript="Напомни позвонить Ивану завтра",
+        title="Позвонить Ивану",
+        event_type=EventType.REMINDER,
+        missing_fields=["due_time"],
+        clarification_question="На какое время поставить напоминание?",
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.due_date.isoformat() == "2026-10-16"
+    assert result.due_at is None
+    assert result.missing_fields == ["due_time"]
+
+
+def test_missing_title_uses_type_default():
+    command = AssistantCommand(
+        action=Action.CREATE_MEETING,
+        transcript="Добавь встречу 20 октября в 16:00",
+        title=None,
+        event_type=EventType.MEETING,
+        missing_fields=["title"],
+        clarification_question="Что за встреча?",
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.title == "Встреча"
+    assert result.missing_fields == []
+
+
+def test_past_meeting_is_not_ready_to_save():
+    command = AssistantCommand(
+        action=Action.CREATE_MEETING,
+        transcript="Добавь встречу 10 октября в кафе в 12:00",
+        title="Встреча в кафе",
+        event_type=EventType.MEETING,
+        starts_at=datetime.fromisoformat("2026-10-10T12:00:00+03:00"),
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.missing_fields == ["past_date"]
+    assert "прошла" in result.clarification_question
+
+
+def test_past_meeting_date_is_reported_before_missing_time():
+    command = AssistantCommand(
+        action=Action.CREATE_MEETING,
+        transcript="Добавь встречу на 10 октября в кафе",
+        title="Встреча в кафе",
+        event_type=EventType.MEETING,
+        missing_fields=["start_time"],
+        clarification_question="На какое время поставить встречу?",
+    )
+
+    result = normalize_command(
+        command, datetime.fromisoformat("2026-10-15T12:00:00+03:00")
+    )
+
+    assert result.missing_fields == ["past_date"]
+    assert result.clarification_question == "Указанная дата уже прошла. Укажите будущую дату."

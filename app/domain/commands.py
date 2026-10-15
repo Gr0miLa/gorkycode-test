@@ -39,13 +39,9 @@ class AssistantCommand(BaseModel):
     def validate_command(self) -> "AssistantCommand":
         if self.date_from and self.date_to and self.date_to < self.date_from:
             raise ValueError("date_to must not be earlier than date_from")
-        if self.action == Action.CREATE_TASK and not self.missing_fields and not self.title:
-            raise ValueError("title is required to create a task")
-        if self.action == Action.CREATE_MEETING and not self.missing_fields:
-            if not self.title:
-                raise ValueError("title is required to create a meeting")
-            if not self.starts_at:
-                raise ValueError("starts_at is required to create a meeting")
+        # Creation requirements are checked after deterministic normalization.
+        # Provider output may omit a title (the application supplies a default)
+        # or forget to declare a missing date/time.
         if self.action == Action.SEARCH_EVENTS and not self.query:
             raise ValueError("query is required to search events")
         if self.action == Action.CLARIFY and not self.clarification_question:

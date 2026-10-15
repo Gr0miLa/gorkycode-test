@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.base import DialogueSession, Event
@@ -57,15 +57,16 @@ class EventService:
         moment = Event.starts_at
         fallback_moment = Event.due_at
         date_only = Event.due_date
-        conditions = [Event.owner_session_id == session_id]
+        conditions = [
+            or_(Event.owner_session_id == session_id, Event.owner_session_id.is_(None))
+        ]
         if event_type:
             conditions.append(Event.type == event_type.value)
+        event_date = func.substr(func.coalesce(moment, fallback_moment, date_only), 1, 10)
         if date_from:
-            start = iso(date_from)
-            conditions.append(or_(moment >= start, fallback_moment >= start, date_only >= start[:10]))
+            conditions.append(event_date >= date_from.date().isoformat())
         if date_to:
-            end = iso(date_to)
-            conditions.append(or_(moment <= end, fallback_moment <= end, date_only <= end[:10]))
+            conditions.append(event_date <= date_to.date().isoformat())
         stmt = (
             select(Event)
             .where(and_(*conditions))

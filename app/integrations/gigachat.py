@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from typing import Any
@@ -94,6 +95,29 @@ class GigaChatClient:
             )
             return command
         except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValueError) as exc:
+            if pending_action is not None:
+                logger.warning(
+                    "gigachat_invalid_pending_response error=%s",
+                    type(exc).__name__,
+                )
+                # Preserve the unfinished operation and let the deterministic
+                # application parser extract date/time from the latest answer.
+                contextual = dict(pending_action)
+                contextual["transcript"] = text
+                return AssistantCommand.model_validate(contextual)
+            if pending_action is None and not _looks_like_event_request(text):
+                logger.warning(
+                    "gigachat_invalid_offtopic_response error=%s",
+                    type(exc).__name__,
+                )
+                return AssistantCommand(
+                    action="clarify",
+                    transcript=text,
+                    clarification_question=(
+                        "Я могу создавать задачи, напоминания и встречи, а также "
+                        "показывать или искать события."
+                    ),
+                )
             raise GigaChatError("GigaChat вернул ответ в неожиданном формате") from exc
 
     async def upload_audio(self, filename: str, content: bytes, content_type: str) -> str:
@@ -183,14 +207,20 @@ class GigaChatClient:
 Текущее время: {now_iso}. Часовой пояс: {self.settings.default_timezone}.
 Неделя начинается в понедельник. Названный день недели означает ближайшее его
 наступление после текущей даты; для «на этой неделе» используй понедельник—воскресенье
-текущей календарной недели. Не добавляй необязательные поля в missing_fields: для
-задачи достаточно title, а для встречи обязательны только title и время начала.
+текущей календарной недели. Не меняй явно названный пользователем тип события.
+Для задачи обязательна дата, но время необязательно. Для напоминания и встречи
+обязательны и дата, и время. Если содержательного названия нет, используй
+«Задача», «Напоминание» или «Встреча».
 Незавершенная команда текущего диалога: {pending}.
 
-Разрешенные действия: create_task, create_meeting, list_events, search_events.
+Разрешенные действия: create_task, create_meeting, list_events, search_events, clarify.
+Если сообщение не относится к задачам, напоминаниям, встречам, списку или поиску
+событий, верни action=clarify и коротко сообщи, с чем умеет работать ассистент.
 Если текущая фраза отвечает на уточнение, объедини ее с незавершенной командой.
-Для встречи обязательны title и starts_at. Для задачи обязательны title и дата;
-если дата не указана, перечисли due_date в missing_fields и задай вопрос о дате.
+Для встречи используй start_date/start_time в missing_fields, для задачи и
+напоминания — due_date/due_time. Если текущий ответ содержит только время, не
+подставляй сегодняшнюю дату: сохрани время и оставь поле даты недостающим.
+Не выдумывай дату или время.
 Если у задачи есть только дата, заполни due_date и оставь due_at равным null.
 Не выдумывай обязательные данные: перечисли их в
 missing_fields и сформулируй один короткий clarification_question. В таком
@@ -200,3 +230,16 @@ missing_fields и сформулируй один короткий clarification
 распознанный текст пользователя; для аудио сначала транскрибируй запись.
 Верни только объект, соответствующий переданной JSON Schema.
 """.strip()
+
+
+def _looks_like_event_request(value: str) -> bool:
+    text = value.lower().replace("ё", "е")
+    markers = (
+        "задач", "напом", "встреч", "событ", "созвон", "совещан", "переговор",
+        "запланирован", "план", "найди", "покажи", "сегодня", "завтра",
+        "послезавтра", "понедельник", "вторник", "сред", "четверг", "пятниц",
+        "суббот", "воскресень",
+    )
+    return any(marker in text for marker in markers) or bool(
+        re.search(r"\b\d{1,2}(?::\d{2}|[./-]\d{1,2})\b", text)
+    )
