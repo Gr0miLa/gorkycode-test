@@ -84,7 +84,7 @@ class AssistantService:
             events = self.events.list_events(
                 session_id, command.date_from, command.date_to, command.event_type
             )
-            reply = f"Найдено событий: {len(events)}." if events else "Событий не найдено."
+            reply = list_reply(len(events), command.event_type)
             return AssistantResponse(
                 reply=reply,
                 action=command.action.value,
@@ -164,3 +164,13 @@ class AssistantService:
             normalized.missing_fields,
         )
         return normalized
+
+
+def list_reply(count: int, event_type) -> str:
+    labels = {
+        "task": ("задач", "Задач"),
+        "reminder": ("напоминаний", "Напоминаний"),
+        "meeting": ("встреч", "Встреч"),
+    }
+    label = labels.get(event_type.value if event_type else "", ("событий", "Событий"))
+    return f"Найдено {label[0]}: {count}." if count else f"{label[1]} не найдено."

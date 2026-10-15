@@ -31,6 +31,11 @@ NUMBER_WORDS = {
 def normalize_command(command: AssistantCommand, now: datetime | None = None) -> AssistantCommand:
     """Map occasionally inconsistent model fields to application semantics."""
     transcript_text = normalize_text(command.transcript)
+    if (
+        command.action == Action.SEARCH_EVENTS
+        and any(marker in transcript_text for marker in ("что у меня", "какие", "покажи", "есть ли", "что запланировано"))
+    ):
+        command = command.model_copy(update={"action": Action.LIST_EVENTS})
     if command.action == Action.CLARIFY and "встреч" in transcript_text:
         command = command.model_copy(update={"action": Action.CREATE_MEETING})
     if (
@@ -122,6 +127,8 @@ def _relative_event_dates(command: AssistantCommand, now: datetime) -> dict:
         return _move_to_date(command, now.date() + timedelta(days=1), event_moment, timezone=now.tzinfo)
     if "сегодня" in text:
         return _move_to_date(command, now.date(), event_moment, timezone=now.tzinfo)
+    if "вчера" in text:
+        return _move_to_date(command, now.date() - timedelta(days=1), event_moment, timezone=now.tzinfo)
 
     for name, weekday in WEEKDAY_ALIASES.items():
         if name in text:
@@ -160,6 +167,8 @@ def _relative_period(text_value: str, now: datetime) -> dict:
     start_date = end_date = None
     if "сегодня" in text:
         start_date = end_date = now.date()
+    elif "вчера" in text:
+        start_date = end_date = now.date() - timedelta(days=1)
     elif "послезавтра" in text:
         start_date = end_date = now.date() + timedelta(days=2)
     elif "завтра" in text:

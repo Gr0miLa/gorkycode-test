@@ -143,3 +143,32 @@ def test_absolute_date_with_minutes_is_not_cleared():
 
     assert result.starts_at == datetime.fromisoformat("2026-10-20T18:30:00+03:00")
     assert result.missing_fields == []
+
+
+def test_natural_event_list_is_not_misclassified_as_search():
+    command = AssistantCommand(
+        action=Action.SEARCH_EVENTS,
+        transcript="Какие встречи были вчера?",
+        query="вчера",
+    )
+
+    result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:57:00+03:00"))
+
+    assert result.action == Action.LIST_EVENTS
+    assert result.date_from == datetime.fromisoformat("2026-10-13T00:00:00+03:00")
+    assert result.date_to == datetime.fromisoformat("2026-10-13T23:59:59+03:00")
+
+
+def test_yesterday_is_preserved_when_creating_meeting():
+    command = AssistantCommand(
+        action=Action.CREATE_MEETING,
+        transcript="Добавь встречу с Жекой вчера",
+        title="Встреча с Жекой",
+        event_type=EventType.MEETING,
+        missing_fields=["start_time"],
+    )
+
+    result = normalize_command(command, datetime.fromisoformat("2026-10-14T22:57:00+03:00"))
+
+    assert result.starts_at == datetime.fromisoformat("2026-10-13T09:00:00+03:00")
+    assert result.missing_fields == ["start_time"]
